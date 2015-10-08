@@ -29,5 +29,8 @@
     <ClInclude Include="..\..\test\tests.h">
       <Filter>Tests</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\SIFT.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

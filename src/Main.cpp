@@ -1,9 +1,7 @@
 
-#include <iostream>
-
-using namespace std;
+#include "tests.h"
 
 int main(int argc, char* argv[]) {
 
-	cout << "hello world" << endl;
+	SIFTMatchTest(argc, argv);
 }

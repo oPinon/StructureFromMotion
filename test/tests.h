@@ -2,4 +2,4 @@
 
 #include <iostream>
 
-void test1();
+int SIFTMatchTest(int argc, char* argv[]);
