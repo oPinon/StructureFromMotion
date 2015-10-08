@@ -1,12 +1,21 @@
 #pragma once
 
 #include <opencv2\opencv.hpp>
+#include <queue>
 
 using namespace cv;
 using namespace std;
 
 struct SIFT : public Feature2D {
 
+private:
+	struct KeyPointComparer {
+		bool operator()(const KeyPoint& a, const KeyPoint& b) const {
+			return a.response > b.response;
+		}
+	};
+
+public:
 	const uint // used for detection
 		sizePyramid = 8,
 		maxPoints = 256,
@@ -58,7 +67,7 @@ struct SIFT : public Feature2D {
 		KeyPoint a;
 		uint w = grayImage.size().width;
 		uint h = grayImage.size().height;
-		vector<KeyPoint> points;
+		priority_queue<KeyPoint, vector<KeyPoint>, KeyPointComparer> points;
 
 		for (uint i = 1; i < diffs.size() - 1; i++) {
 
@@ -81,16 +90,19 @@ struct SIFT : public Feature2D {
 						point.pt.y = (float)y;
 						point.octave = i;
 						point.response = 2 * p - pBefore - pAfter;
-						points.push_back(point);
+						
+						points.push(point);
+						if (points.size() > maxPoints) { points.pop(); }
 					}
 				}
 			}
 		}
 
-		sort(points.begin(), points.end(), [](KeyPoint a, KeyPoint b)->bool { return a.response > b.response; });
-		points = vector<KeyPoint>(points.begin(), points.begin() + min((uint)points.size(), maxPoints));
-
-		keypoints = points;
+		keypoints.clear();
+		while (points.size() > 0) {
+			keypoints.push_back(points.top());
+			points.pop();
+		}
 	}
 
 	/*
