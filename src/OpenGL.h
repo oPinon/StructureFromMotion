@@ -3,6 +3,10 @@
 #include <GL/glew.h>
 #include <GL/glut.h>
 #include <vector>
+#include <unordered_map>
+#include <string>
+
+#include "Mesh.h"
 
 using namespace std;
 
@@ -12,12 +16,36 @@ int currentH = 600;
 int targetFramerate = 60;
 
 int mouseLastX, mouseLastY;
-int viewRotX = 30, viewRotZ = 10, viewDist = 3;
+float modelRotX = 30, modelRotZ = 10, viewRotX = 0, viewRotY = 0, viewDist = 3;
 
 int windowId;
+bool displayTriangles = true;
+bool displayPoints = true;
 
-vector<float> points;
-vector<unsigned char> colors;
+struct keyFunction {
+	const string description;
+	void (*function)(void);
+};
+unordered_map<char, keyFunction> keys = {
+	{ 27 ,
+		{ "Exits the program", [](void) {
+			glutDestroyWindow(windowId);
+			exit(EXIT_SUCCESS);
+		} }
+	},
+	{ 't' ,
+		{ "Switches triangles' display", [](void) {
+			displayTriangles = !displayTriangles;
+		} }
+	},
+	{ 'p' ,
+		{ "Switches the point cloud's display", [](void) {
+			displayPoints = !displayPoints;
+		} }
+	}
+};
+
+Mesh mesh;
 
 void init() {
 
@@ -26,10 +54,14 @@ void init() {
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
 
+	// vertices
 	glEnableClientState(GL_VERTEX_ARRAY);
-	glVertexPointer(3, GL_FLOAT, 0, points.data());
+	glVertexPointer(3, GL_FLOAT, 0, mesh.vertices.data());
+	//glPointSize(3);
+
+	// vertice colors
 	glEnableClientState(GL_COLOR_ARRAY);
-	glColorPointer(3, GL_UNSIGNED_BYTE, 0, colors.data());
+	glColorPointer(3, GL_UNSIGNED_BYTE, 0, mesh.colors.data());
 }
 
 void display() {
@@ -39,24 +71,30 @@ void display() {
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
+	glRotated(viewRotX, 1, 0, 0);
+	glRotated(viewRotY, 0, 1, 0);
+
 	gluLookAt(
 		0, -viewDist, 0,
 		0, 0, 0,
 		0, 0, 1
 		);
 
-	if (viewRotX >= 360) { viewRotX -= 360; }
-	if (viewRotZ >= 360) { viewRotZ -= 360; }
-
-	glRotated(viewRotZ, 0, 0, 1);
-	glRotated(viewRotX, 1, 0, 0);
+	glRotated(modelRotZ, 0, 0, 1);
+	glRotated(modelRotX, 1, 0, 0);
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 
 	gluPerspective(50, ((double)currentW) / currentH, 0.1, 100);
 
-	glDrawArrays(GL_POINTS, 0, points.size() / 3);
+	if (displayPoints) {
+		glDrawArrays(GL_POINTS, 0, mesh.vertices.size() / 3);
+	}
+
+	if (displayTriangles) {
+		glDrawElements(GL_TRIANGLES, mesh.triangleIndexes.size(), GL_UNSIGNED_INT, mesh.triangleIndexes.data());
+	}
 
 	glutSwapBuffers();
 }
@@ -73,12 +111,9 @@ void idle() {
 
 void keyboard(unsigned char key, int x, int y) {
 
-	switch (key)
-	{
-	case 27: // escape
-		glutDestroyWindow(windowId);
-		exit(EXIT_SUCCESS);
-		break;
+	auto function = keys.find(key);
+	if (function != keys.end()) {
+		function->second.function();
 	}
 
 }
@@ -95,10 +130,22 @@ void reshape(GLsizei w, GLsizei h) {
 	display();
 }
 
+bool lastKeyIsLeft; // left or right
+
 void mouseMove(int x, int y) {
 
-	viewRotX += y - mouseLastY;
-	viewRotZ += x - mouseLastX;
+	if (lastKeyIsLeft) {
+		modelRotX += 0.2f*(y - mouseLastY);
+		modelRotZ += 0.2f*(x - mouseLastX);
+		if (modelRotX >= 360) { modelRotX -= 360; }
+		if (modelRotZ >= 360) { modelRotZ -= 360; }
+	}
+	else {
+		viewRotX += 0.2f*(y - mouseLastY);
+		viewRotY += 0.2f*(x - mouseLastX);
+		if (viewRotX >= 360) { viewRotX -= 360; }
+		if (viewRotY >= 360) { viewRotY -= 360; }
+	}
 	mouseLastX = x;
 	mouseLastY = y;
 }
@@ -109,13 +156,19 @@ void mouseClick(int button, int state, int x, int y) {
 
 		switch (button)
 		{
-		case 3 :
-			viewDist--; if (viewDist < 1) { viewDist = 1; }
+		case 3 : // scroll down
+			viewDist-=0.3f; if (viewDist < 0.1f) { viewDist = 0.1f; }
 			break;
-		case 4 :
-			viewDist++;
+		case 4 : // scroll up
+			viewDist+=0.3f;
 			break;
-		default:
+		case 0 : // left click
+			lastKeyIsLeft = true;
+			mouseLastX = x;
+			mouseLastY = y;
+			break;
+		case 2: // right click
+			lastKeyIsLeft = false;
 			mouseLastX = x;
 			mouseLastY = y;
 			break;
@@ -128,6 +181,11 @@ void mouseClick(int button, int state, int x, int y) {
 
 int OpenGLMain(int argc = 0, char *argv[] = NULL)
 {
+	cout << "Keys : " << endl;
+	for (const auto& key : keys) {
+		cout << " '" << key.first << "' " << key.second.description << endl;
+	}
+
 	// importing points
 	ifstream in("BuildingNViewMatches.nvm");
 	string line;
@@ -145,50 +203,18 @@ int OpenGLMain(int argc = 0, char *argv[] = NULL)
 	getline(in, line);
 	int nbPoints = stoi(line);
 	cout << nbPoints << " points" << endl;
-	points = vector<float>(3 * nbPoints);
-	colors = vector<unsigned char>(3 * nbPoints);
-	float x, y, z;
-	int r, g, b;
+	mesh.points = vector<Point>(nbPoints);
 	for (int i = 0; i < nbPoints; i++) {
-		in >> x >> y >> z;
-		points[3 * i + 0] = x;
-		points[3 * i + 1] = y;
-		points[3 * i + 2] = z;
+		Point& pt = mesh.points[i];
+		in >> pt.pos.x >> pt.pos.y >> pt.pos.z;
+		int r, g, b;
 		in >> r >> g >> b;
-		colors[3 * i + 0] = r;
-		colors[3 * i + 1] = g;
-		colors[3 * i + 2] = b;
+		pt.col.r = r;
+		pt.col.g = g;
+		pt.col.b = b;
 		getline(in, line);
 	}
-
-	// recentering
-	float cX = 0, cY = 0, cZ = 0;
-	for (int i = 0; i < nbPoints; i++) {
-		cX += points[3 * i + 0];
-		cY += points[3 * i + 1];
-		cZ += points[3 * i + 2];
-	}
-	cX /= nbPoints;
-	cY /= nbPoints;
-	cZ /= nbPoints;
-	float vX = 0, vY = 0, vZ = 0;
-	for (int i = 0; i < nbPoints; i++) {
-		points[3 * i + 0] -= cX;
-		points[3 * i + 1] -= cY;
-		points[3 * i + 2] -= cZ;
-		vX += points[3 * i + 0] * points[3 * i + 0];
-		vY += points[3 * i + 1] * points[3 * i + 1];
-		vZ += points[3 * i + 2] * points[3 * i + 2];
-	}
-	vX = sqrt(vX / nbPoints);
-	vY = sqrt(vY / nbPoints);
-	vZ = sqrt(vZ / nbPoints);
-	float ratio = sqrt((vX*vX + vY*vY + vZ*vZ) / 3);
-	for (int i = 0; i < nbPoints; i++) {
-		points[3 * i + 0] /= ratio;
-		points[3 * i + 1] /= ratio;
-		points[3 * i + 2] /= ratio;
-	}
+	mesh.preRender();
 
 	glutInit(&argc, argv);
 

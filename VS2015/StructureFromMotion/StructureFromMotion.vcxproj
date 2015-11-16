@@ -153,6 +153,7 @@
     <ClCompile Include="..\..\test\test1.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\src\Mesh.h" />
     <ClInclude Include="..\..\src\OpenGL.h" />
     <ClInclude Include="..\..\src\SIFT.h" />
     <ClInclude Include="..\..\test\tests.h" />
