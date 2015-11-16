@@ -1,7 +1,7 @@
 
-#include "tests.h"
+#include "OpenGL.h"
 
-int main(int argc, char* argv[]) {
+int main() {
 
-	SIFTMatchTest(argc, argv);
+	OpenGLMain();
 }
