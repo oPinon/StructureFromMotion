@@ -8,6 +8,8 @@
 
 #include "Mesh.h"
 
+#include <opencv2\opencv.hpp>
+
 using namespace std;
 
 int currentW = 800;
@@ -21,6 +23,11 @@ float modelRotX = 30, modelRotZ = 10, viewRotX = 0, viewRotY = 0, viewDist = 3;
 int windowId;
 bool displayTriangles = true;
 bool displayPoints = true;
+bool isWireframe = false;
+int camera = -1;
+int currentImg = -1;
+
+Mesh mesh;
 
 struct keyFunction {
 	const string description;
@@ -42,10 +49,45 @@ unordered_map<char, keyFunction> keys = {
 		{ "Switches the point cloud's display", [](void) {
 			displayPoints = !displayPoints;
 		} }
+	},
+	{
+		'w',
+		{
+			"Switches to wireframe mode", [](void) {
+			isWireframe = !isWireframe;
+			glPolygonMode(GL_FRONT_AND_BACK, isWireframe ? GL_LINE : GL_FILL);
+		}
+		}
+	},
+	{
+		'c',
+		{
+			"Switches camera", [](void) {
+			camera++; if (camera >= mesh.views.size()) { camera = -1; }
+		}
+		}
+	},
+	{
+		'i',
+		{
+			"Displays the next view", [](void) {
+			currentImg = (currentImg + 1) % mesh.views.size();
+			Mesh::CameraView& view = mesh.views[currentImg];
+			cv::Mat im = cv::imread(view.imgPath);
+			for (const auto& pt : view.features) {
+				cv::circle(im, {
+
+					(int)(pt.x + im.size().width / 2),
+					(int)(pt.y + im.size().height / 2)
+
+				}, 10, cv::Scalar(255, 0, 0, 0.5), 5);
+			}
+			cv::resize(im, im, im.size() / 4);
+			imshow("View", im); cv::waitKey(1);
+		}
+		}
 	}
 };
-
-Mesh mesh;
 
 void init() {
 
@@ -74,14 +116,28 @@ void display() {
 	glRotated(viewRotX, 1, 0, 0);
 	glRotated(viewRotY, 0, 1, 0);
 
-	gluLookAt(
-		0, -viewDist, 0,
-		0, 0, 0,
-		0, 0, 1
-		);
+	if (camera == -1) {
 
-	glRotated(modelRotZ, 0, 0, 1);
-	glRotated(modelRotX, 1, 0, 0);
+		gluLookAt(
+			0, -viewDist, 0,
+			0, 0, 0,
+			0, 0, 1
+			);
+
+		glRotated(modelRotZ, 0, 0, 1);
+		glRotated(modelRotX, 1, 0, 0);
+	}
+	else {
+
+		Mesh::CameraView& view = mesh.views[camera];
+		Mesh::Vec3 up = view.orientation.transform({ 0,0,1 });
+		Mesh::Vec3 target = view.pos + view.orientation.transform({ 0,1,0 });
+		gluLookAt(
+			view.pos.x, view.pos.y, view.pos.z,
+			target.x, target.y, target.z,
+			up.x, up.y, up.z
+			);
+	}
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
@@ -176,44 +232,14 @@ void mouseClick(int button, int state, int x, int y) {
 	}
 }
 
-#include <fstream>
-#include <sstream>
-
-int OpenGLMain(int argc = 0, char *argv[] = NULL)
+int OpenGLMain(Mesh& m, int argc = 0, char *argv[] = NULL)
 {
 	cout << "Keys : " << endl;
 	for (const auto& key : keys) {
-		cout << " '" << key.first << "' " << key.second.description << endl;
+		cout << "[ " << key.first << " ] : " << key.second.description << endl;
 	}
 
-	// importing points
-	ifstream in("BuildingNViewMatches.nvm");
-	string line;
-	getline(in, line);
-	getline(in, line);
-	getline(in, line);
-	int nbPics = stoi(line);
-	cout << nbPics << " views" << endl;
-	for (int i = 0; i < nbPics; i++) {
-		string path;
-		getline(in, path, '	'); // weird delimiter (not actually a space)
-		getline(in, line);
-	}
-	getline(in, line);
-	getline(in, line);
-	int nbPoints = stoi(line);
-	cout << nbPoints << " points" << endl;
-	mesh.points = vector<Point>(nbPoints);
-	for (int i = 0; i < nbPoints; i++) {
-		Point& pt = mesh.points[i];
-		in >> pt.pos.x >> pt.pos.y >> pt.pos.z;
-		int r, g, b;
-		in >> r >> g >> b;
-		pt.col.r = r;
-		pt.col.g = g;
-		pt.col.b = b;
-		getline(in, line);
-	}
+	mesh = m;
 	mesh.preRender();
 
 	glutInit(&argc, argv);
