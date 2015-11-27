@@ -7,6 +7,7 @@
 #include <string>
 
 #include "Mesh.h"
+#include "Shader.h"
 
 #include <opencv2\opencv.hpp>
 
@@ -26,6 +27,11 @@ bool displayPoints = true;
 bool isWireframe = false;
 int camera = -1;
 int currentImg = -1;
+GLuint background;
+float backgroundRatio = 1;
+Shader bgShader;
+GLuint texCoordsPos;
+uint focalWidth;
 
 Mesh mesh;
 
@@ -64,6 +70,14 @@ unordered_map<char, keyFunction> keys = {
 		{
 			"Switches camera", [](void) {
 			camera++; if (camera >= mesh.views.size()) { camera = -1; }
+
+			// setting the background image
+			// TODO :  mermory leak ?
+			Mesh::CameraView& view = mesh.views[camera];
+			cv::Mat image = cv::imread(view.imgPath);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.size().width, image.size().height, 0, GL_BGR, GL_UNSIGNED_BYTE, image.data);
+			backgroundRatio = image.size().width / (float)image.size().height;
+			focalWidth = max(image.size().width, image.size().height);
 		}
 		}
 	},
@@ -99,24 +113,54 @@ void init() {
 	// vertices
 	glEnableClientState(GL_VERTEX_ARRAY);
 	glVertexPointer(3, GL_FLOAT, 0, mesh.vertices.data());
-	//glPointSize(3);
+	glPointSize(3);
 
 	// vertice colors
 	glEnableClientState(GL_COLOR_ARRAY);
 	glColorPointer(3, GL_UNSIGNED_BYTE, 0, mesh.colors.data());
+
+	// background texture
+	glGenTextures(1, &background);
+	glBindTexture(GL_TEXTURE_2D, background);
+
+	//cv::Mat image = cv::imread("armor0.jpg");
+	//setBackground(image);
+	
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	bgShader = Shader("../../src/shaders/backgroundV.glsl", "../../src/shaders/backgroundF.glsl");
+	texCoordsPos = bgShader.getAttribLocation("texCoordsV");
 }
 
 void display() {
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+	// displaying the background texture
+	if (camera != -1) {
+
+		float vX = ( backgroundRatio * currentH ) / currentW;
+		bgShader.use();
+		glDepthMask(GL_FALSE);
+		glBegin(GL_QUADS);
+			glVertexAttrib2f(texCoordsPos, 0, 1); glVertex2f(-vX, -1);
+			glVertexAttrib2f(texCoordsPos, 1, 1); glVertex2f(vX, -1);	 
+			glVertexAttrib2f(texCoordsPos, 1, 0); glVertex2f(vX, 1);		
+			glVertexAttrib2f(texCoordsPos, 0, 0); glVertex2f(-vX, 1);
+		glEnd();
+		glDepthMask(GL_TRUE);
+		glUseProgram(0);
+	}
+
+	// displaying the model
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
-	glRotated(viewRotX, 1, 0, 0);
-	glRotated(viewRotY, 0, 1, 0);
-
+	float fov = 50;
 	if (camera == -1) {
+		
+		glRotated(viewRotX, 1, 0, 0);
+		glRotated(viewRotY, 0, 1, 0);
 
 		gluLookAt(
 			0, -viewDist, 0,
@@ -130,19 +174,21 @@ void display() {
 	else {
 
 		Mesh::CameraView& view = mesh.views[camera];
-		Mesh::Vec3 up = view.orientation.transform({ 0,0,1 });
-		Mesh::Vec3 target = view.pos + view.orientation.transform({ 0,1,0 });
+		// http://ccwu.me/vsfm/doc.html#basic
+		Mesh::Vec3 up = view.orientation.transform({ 0,-1,0 });
+		Mesh::Vec3 target = view.pos + view.orientation.transform({ 0,0,1 });
 		gluLookAt(
 			view.pos.x, view.pos.y, view.pos.z,
 			target.x, target.y, target.z,
 			up.x, up.y, up.z
 			);
+		fov = 35 * focalWidth / view.focal; // HACK 35mm ?
 	}
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 
-	gluPerspective(50, ((double)currentW) / currentH, 0.1, 100);
+	gluPerspective(fov, ((double)currentW) / currentH, 0.1, 100);
 
 	if (displayPoints) {
 		glDrawArrays(GL_POINTS, 0, mesh.vertices.size() / 3);
