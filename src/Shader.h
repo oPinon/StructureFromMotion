@@ -1,8 +1,11 @@
+#pragma once
+
 #include <GL/glew.h>
 #include <GL/glut.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 using namespace std;
 
